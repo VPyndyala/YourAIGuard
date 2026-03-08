@@ -272,6 +272,7 @@ async function processResponse(responseEl) {
       new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000)),
     ]);
 
+    console.log("[YourAIGuard] Gate result — needsCheck:", gateResult?.needsCheck, "proba:", gateResult?.proba?.toFixed(3));
     if (gateResult?.needsCheck) {
       await runAnalysis(responseEl, userPrompt, baseText);
     }
