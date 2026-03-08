@@ -118,16 +118,17 @@ async function processResponse(responseEl) {
   }
 
   try {
-    const result = await browser.runtime.sendMessage({
-      type: "classify_prompt",
-      prompt: userPrompt,
-    });
+    // Timeout after 15s in case the model is still loading
+    const result = await Promise.race([
+      browser.runtime.sendMessage({ type: "classify_prompt", prompt: userPrompt }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000)),
+    ]);
 
     if (result && result.needsCheck) {
       insertIndicator(responseEl);
     }
   } catch (err) {
-    // If gate fails for any reason, show indicator (safe fallback)
+    // If gate fails or times out, show indicator (safe fallback)
     insertIndicator(responseEl);
   }
 }

@@ -1,67 +1,80 @@
 /**
- * YourAIGuard - Background Script
- * Manages the gate worker and routes messages between
- * content scripts and the inference worker.
+ * YourAIGuard - Background Script (ES Module)
+ * Loads the MiniLM embedder + gate model weights,
+ * then classifies user prompts on request from the content script.
  */
 
-let worker = null;
-let workerReady = false;
-const pendingRequests = new Map();
-let requestId = 0;
+import { pipeline, env } from "./transformers.min.js";
 
-function initWorker() {
-  const workerUrl = browser.runtime.getURL("gate_worker.js");
-  const modelUrl = browser.runtime.getURL("gate_model.json");
+// Use browser cache; don't look for local models
+env.allowLocalModels = false;
+env.useBrowserCache = true;
 
-  worker = new Worker(workerUrl);
+let embedder = null;
+let modelData = null;
+let ready = false;
 
-  worker.onmessage = (event) => {
-    const { type, id, needsCheck, proba } = event.data;
+async function init() {
+  try {
+    // Load gate model weights (logistic regression)
+    const res = await fetch(browser.runtime.getURL("gate_model.json"));
+    modelData = await res.json();
 
-    if (type === "ready") {
-      workerReady = true;
-      // Flush any queued requests
-      pendingRequests.forEach(({ resolve, prompt }, queuedId) => {
-        worker.postMessage({ type: "classify", id: queuedId, prompt });
-      });
-      return;
-    }
+    // Load the MiniLM embedder (downloads ~23MB on first use, then cached)
+    embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
+      quantized: true,
+    });
 
-    if (type === "result") {
-      const entry = pendingRequests.get(id);
-      if (entry) {
-        entry.resolve({ needsCheck, proba });
-        pendingRequests.delete(id);
-      }
-    }
-  };
-
-  worker.onerror = (err) => {
-    console.error("[YourAIGuard] Worker error:", err);
-  };
-
-  // Kick off model loading
-  worker.postMessage({ type: "init", modelUrl });
+    ready = true;
+    console.log("[YourAIGuard] Gate model ready. Threshold:", modelData.threshold);
+  } catch (err) {
+    console.error("[YourAIGuard] Failed to initialise gate model:", err);
+  }
 }
 
-function classifyPrompt(prompt) {
-  return new Promise((resolve) => {
-    const id = ++requestId;
-    pendingRequests.set(id, { resolve, prompt });
-
-    if (workerReady) {
-      worker.postMessage({ type: "classify", id, prompt });
-    }
-    // If not ready yet, the flush in the "ready" handler will pick it up
-  });
+/**
+ * Sigmoid — matches sklearn's predict_proba for logistic regression.
+ */
+function sigmoid(x) {
+  return 1 / (1 + Math.exp(-x));
 }
 
-// Listen for messages from content scripts
-browser.runtime.onMessage.addListener((message, sender) => {
+/**
+ * Runs dot product of logistic regression weights against the embedding.
+ */
+function predictProba(embedding) {
+  let dot = modelData.intercept;
+  for (let i = 0; i < embedding.length; i++) {
+    dot += modelData.coef[i] * embedding[i];
+  }
+  return sigmoid(dot);
+}
+
+/**
+ * Classifies a user prompt.
+ * Returns { needsCheck: bool, proba: float }
+ */
+async function classify(prompt) {
+  if (!ready) {
+    // Model still loading — default to showing indicator (safe fallback)
+    return { needsCheck: true, proba: 1.0 };
+  }
+
+  const output = await embedder(prompt, { pooling: "mean", normalize: true });
+  const embedding = Array.from(output.data);
+  const proba = predictProba(embedding);
+  const needsCheck = proba >= modelData.threshold;
+
+  console.log(`[YourAIGuard] "${prompt.slice(0, 60)}..." → proba=${proba.toFixed(3)} needsCheck=${needsCheck}`);
+  return { needsCheck, proba };
+}
+
+// Handle messages from content scripts
+browser.runtime.onMessage.addListener((message) => {
   if (message.type === "classify_prompt") {
-    return classifyPrompt(message.prompt).then((result) => result);
+    return classify(message.prompt);
   }
 });
 
-// Start the worker when the background page loads
-initWorker();
+// Start loading model immediately
+init();

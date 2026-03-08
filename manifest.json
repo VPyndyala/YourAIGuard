@@ -13,7 +13,7 @@
     "default_title": "YourAIGuard"
   },
   "background": {
-    "scripts": ["background.js"],
+    "page": "background.html",
     "persistent": true
   },
   "content_scripts": [
@@ -28,7 +28,6 @@
     "storage"
   ],
   "web_accessible_resources": [
-    "gate_worker.js",
     "gate_model.json",
     "transformers.min.js"
   ],
