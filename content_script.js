@@ -18,6 +18,9 @@ const RUNG_LABELS = {
   r5_score: "R5 — Revision Trigger",
 };
 
+// Lock to prevent rung responses from triggering analysis recursively
+let analysisInProgress = false;
+
 const RUNG_PROMPTS = [
   "R1 — Risk & Harm Awareness - In one sentence, identify any potential risks or harms involved (if none, state \"No material risk detected\"). Include a confidence percentage (0–100).",
   "R2 — Factual & Logical Soundness - In one sentence, state the key assumption your answer relies on.",
@@ -183,6 +186,7 @@ async function runAnalysis(responseEl, userPrompt, baseText) {
   const loadingNode = createLoadingIndicator();
   insertIndicator(responseEl, loadingNode);
 
+  analysisInProgress = true;
   try {
     // Send the 5 rung prompts in sequence and collect responses
     const rungResponses = [];
@@ -211,6 +215,8 @@ async function runAnalysis(responseEl, userPrompt, baseText) {
     loadingNode.replaceWith(createFullIndicator(0, [
       { pass: false }, { pass: false }, { pass: false }, { pass: false }, { pass: false },
     ]));
+  } finally {
+    analysisInProgress = false;
   }
 }
 
@@ -239,16 +245,14 @@ function isStreaming(responseEl) {
 async function processResponse(responseEl) {
   if (responseEl.hasAttribute(INDICATOR_ATTR)) return;
   if (isStreaming(responseEl)) return;
+  if (analysisInProgress) return; // don't process rung responses mid-analysis
 
   responseEl.setAttribute(INDICATOR_ATTR, "true");
 
   const userPrompt = getPrecedingUserPrompt(responseEl);
   const baseText   = responseEl.textContent.trim();
 
-  if (!userPrompt) {
-    // Can't find prompt — skip silently
-    return;
-  }
+  if (!userPrompt) return;
 
   try {
     const gateResult = await Promise.race([
@@ -260,7 +264,9 @@ async function processResponse(responseEl) {
       await runAnalysis(responseEl, userPrompt, baseText);
     }
   } catch (err) {
-    console.warn("[YourAIGuard] Gate error:", err);
+    // Gate failed — show indicator as safe fallback
+    console.warn("[YourAIGuard] Gate error, showing fallback:", err);
+    insertIndicator(responseEl, createLoadingIndicator());
   }
 }
 
