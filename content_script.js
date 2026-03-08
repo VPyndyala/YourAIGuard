@@ -223,12 +223,19 @@ async function runAnalysis(responseEl, userPrompt, baseText) {
 // ─── Response Detection ──────────────────────────────────────────────────────
 
 function getPrecedingUserPrompt(assistantEl) {
-  let node = assistantEl.parentElement;
+  // Walk up the tree, checking all previous siblings at each level
+  let node = assistantEl;
   while (node) {
-    const prev = node.previousElementSibling;
-    if (prev) {
-      const userMsg = prev.querySelector('[data-message-author-role="user"]');
+    let sibling = node.previousElementSibling;
+    while (sibling) {
+      // Sibling itself might be the user message container
+      if (sibling.getAttribute("data-message-author-role") === "user") {
+        return sibling.textContent.trim();
+      }
+      // Or it might be nested inside the sibling
+      const userMsg = sibling.querySelector('[data-message-author-role="user"]');
       if (userMsg) return userMsg.textContent.trim();
+      sibling = sibling.previousElementSibling;
     }
     node = node.parentElement;
   }
@@ -236,21 +243,26 @@ function getPrecedingUserPrompt(assistantEl) {
 }
 
 function isStreaming(responseEl) {
-  const content = responseEl.querySelector(".markdown, [class*='prose']");
-  if (!content || content.textContent.trim().length === 0) return true;
+  // Check for explicit streaming indicators
   if (responseEl.querySelector(".result-streaming, [data-testid='streaming-cursor']")) return true;
+  // Fall back to checking overall text content
+  if (responseEl.textContent.trim().length === 0) return true;
   return false;
 }
 
 async function processResponse(responseEl) {
   if (responseEl.hasAttribute(INDICATOR_ATTR)) return;
-  if (isStreaming(responseEl)) return;
-  if (analysisInProgress) return; // don't process rung responses mid-analysis
+  if (analysisInProgress) return;
+
+  const streaming = isStreaming(responseEl);
+  console.log("[YourAIGuard] processResponse — streaming:", streaming, responseEl);
+  if (streaming) return;
 
   responseEl.setAttribute(INDICATOR_ATTR, "true");
 
   const userPrompt = getPrecedingUserPrompt(responseEl);
   const baseText   = responseEl.textContent.trim();
+  console.log("[YourAIGuard] userPrompt found:", !!userPrompt, "| preview:", userPrompt?.slice(0, 60));
 
   if (!userPrompt) return;
 
