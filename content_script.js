@@ -190,8 +190,9 @@ async function runAnalysis(responseEl, userPrompt, baseText) {
   try {
     // Send the 5 rung prompts in sequence and collect responses
     const rungResponses = [];
-    for (const prompt of RUNG_PROMPTS) {
-      const response = await sendAndWait(prompt);
+    for (let i = 0; i < RUNG_PROMPTS.length; i++) {
+      const response = await sendAndWait(RUNG_PROMPTS[i]);
+      console.log(`[YourAIGuard] R${i + 1} response (${response.length} chars):`, response.slice(0, 120));
       rungResponses.push(response);
     }
 
