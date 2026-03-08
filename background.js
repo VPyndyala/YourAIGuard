@@ -1,80 +1,84 @@
 /**
  * YourAIGuard - Background Script (ES Module)
- * Loads the MiniLM embedder + gate model weights,
- * then classifies user prompts on request from the content script.
+ * Loads the MiniLM embedder + gate model + rung scoring model,
+ * then classifies user prompts and scores rung responses on request.
  */
 
 import { pipeline, env } from "./transformers.min.js";
 
-// Use browser cache; don't look for local models
 env.allowLocalModels = false;
-env.useBrowserCache = true;
+env.useBrowserCache  = true;
 
-let embedder = null;
-let modelData = null;
-let ready = false;
+let embedder  = null;
+let gateModel = null;
+let rungModel = null;
+let ready     = false;
 
 async function init() {
   try {
-    // Load gate model weights (logistic regression)
-    const res = await fetch(browser.runtime.getURL("gate_model.json"));
-    modelData = await res.json();
+    const [gateRes, rungRes] = await Promise.all([
+      fetch(browser.runtime.getURL("gate_model.json")),
+      fetch(browser.runtime.getURL("rung_model.json")),
+    ]);
+    gateModel = await gateRes.json();
+    rungModel = await rungRes.json();
 
-    // Load the MiniLM embedder (downloads ~23MB on first use, then cached)
     embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
       quantized: true,
     });
 
     ready = true;
-    console.log("[YourAIGuard] Gate model ready. Threshold:", modelData.threshold);
+    console.log("[YourAIGuard] Ready. Gate threshold:", gateModel.threshold);
   } catch (err) {
-    console.error("[YourAIGuard] Failed to initialise gate model:", err);
+    console.error("[YourAIGuard] Init failed:", err);
   }
 }
 
-/**
- * Sigmoid — matches sklearn's predict_proba for logistic regression.
- */
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
 
-/**
- * Runs dot product of logistic regression weights against the embedding.
- */
-function predictProba(embedding) {
-  let dot = modelData.intercept;
-  for (let i = 0; i < embedding.length; i++) {
-    dot += modelData.coef[i] * embedding[i];
-  }
-  return sigmoid(dot);
+function dotProduct(coef, vec) {
+  let s = 0;
+  for (let i = 0; i < vec.length; i++) s += coef[i] * vec[i];
+  return s;
 }
 
-/**
- * Classifies a user prompt.
- * Returns { needsCheck: bool, proba: float }
- */
-async function classify(prompt) {
-  if (!ready) {
-    // Model still loading — default to showing indicator (safe fallback)
-    return { needsCheck: true, proba: 1.0 };
-  }
-
-  const output = await embedder(prompt, { pooling: "mean", normalize: true });
-  const embedding = Array.from(output.data);
-  const proba = predictProba(embedding);
-  const needsCheck = proba >= modelData.threshold;
-
-  console.log(`[YourAIGuard] "${prompt.slice(0, 60)}..." → proba=${proba.toFixed(3)} needsCheck=${needsCheck}`);
-  return { needsCheck, proba };
+async function embedText(text) {
+  const out = await embedder(text || "", { pooling: "mean", normalize: true });
+  return Array.from(out.data);
 }
 
-// Handle messages from content scripts
+// Gate: does this prompt require a reasoning check?
+async function classifyGate(prompt) {
+  if (!ready) return { needsCheck: true, proba: 1.0 };
+  const emb   = await embedText(prompt);
+  const proba = sigmoid(dotProduct(gateModel.coef, emb) + gateModel.intercept);
+  return { needsCheck: proba >= gateModel.threshold, proba };
+}
+
+// Rungs: score each of the 5 rung responses
+async function scoreRungs({ prompt, base, r1, r2, r3, r4, r5 }) {
+  if (!ready) return null;
+
+  // Embed all 7 fields separately then concatenate (matches training setup)
+  const fields  = [prompt, base, r1, r2, r3, r4, r5];
+  const embeddings = await Promise.all(fields.map(embedText));
+  const combined   = embeddings.flat(); // 7 × 384 = 2688 dims
+
+  const scores = rungModel.rungs.map((rung) => {
+    const proba = sigmoid(dotProduct(rung.coef, combined) + rung.intercept);
+    const pass  = proba >= rung.threshold;
+    return { name: rung.name, pass, proba: parseFloat(proba.toFixed(3)) };
+  });
+
+  const confidence = Math.round((scores.filter(s => s.pass).length / scores.length) * 100);
+  return { scores, confidence };
+}
+
 browser.runtime.onMessage.addListener((message) => {
-  if (message.type === "classify_prompt") {
-    return classify(message.prompt);
-  }
+  if (message.type === "classify_prompt") return classifyGate(message.prompt);
+  if (message.type === "score_rungs")     return scoreRungs(message.data);
 });
 
-// Start loading model immediately
 init();
