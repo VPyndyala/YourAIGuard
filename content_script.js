@@ -132,7 +132,10 @@ async function callChatGPT(accessToken, fullPrompt, model) {
     body: JSON.stringify(body),
   });
 
-  if (!response.ok) throw new Error(`ChatGPT API error: ${response.status}`);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`ChatGPT API error: ${response.status} — ${errText.slice(0, 200)}`);
+  }
 
   // Parse Server-Sent Events stream
   const reader  = response.body.getReader();
@@ -166,6 +169,7 @@ async function runAnalysis(responseEl, userPrompt, baseText, model) {
 
   try {
     const accessToken = await getAuthToken();
+    console.log("[YourAIGuard] Auth token:", accessToken ? "found" : "MISSING");
     if (!accessToken) throw new Error("Could not get auth token");
 
     // Build context prefix so ChatGPT knows what it previously said
@@ -194,7 +198,7 @@ async function runAnalysis(responseEl, userPrompt, baseText, model) {
     loadingNode.replaceWith(createFullIndicator(result.confidence, result.scores));
 
   } catch (err) {
-    console.error("[YourAIGuard] Analysis failed:", err);
+    console.error("[YourAIGuard] Analysis failed:", err.message);
     loadingNode.replaceWith(createFullIndicator(0, [
       { pass: false }, { pass: false }, { pass: false }, { pass: false }, { pass: false },
     ]));
