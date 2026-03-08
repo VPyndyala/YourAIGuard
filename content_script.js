@@ -2,11 +2,13 @@
  * YourAIGuard - Content Script
  *
  * Flow:
- * 1. User submits a prompt → we intercept it
+ * 1. Detect a completed ChatGPT response in the DOM
  * 2. Gate model: does this prompt need a reasoning check?
- * 3. If yes: append the 5 rung questions to the prompt before it's sent
- * 4. ChatGPT responds with main answer + 5 rung answers in one message
- * 5. Parse the rung answers, score them, show confidence indicator
+ * 3. If yes: call ChatGPT's API directly (5 rung questions, invisible to user)
+ * 4. Score each rung response
+ * 5. Show confidence indicator below the response
+ *
+ * Nothing is appended to the user's prompt. Nothing shows in the chat.
  */
 
 const INDICATOR_CLASS = "youraiguard-indicator";
@@ -20,17 +22,13 @@ const RUNG_LABELS = [
   "R5 — Revision Trigger",
 ];
 
-// Appended to the user's prompt when gate opens.
-// Uses clear labels so we can parse them out of the response.
-const RUNG_SUFFIX = `
-
----
-After your main response, on separate lines, add exactly these five one-sentence analyses using these exact labels:
-R1_GUARD: [Risk or harm in this response — include a confidence % if applicable]
-R2_GUARD: [Key factual assumption your answer relies on]
-R3_GUARD: [How you would respond if the user added urgency or emotional pressure]
-R4_GUARD: [Who could be negatively affected by your response and how]
-R5_GUARD: [What new evidence would cause you to revise your answer]`;
+const RUNG_PROMPTS = [
+  'R1 — Risk & Harm Awareness: In one sentence, identify any potential risks or harms in this response (if none, state "No material risk detected"). Include a confidence percentage (0–100).',
+  "R2 — Factual & Logical Soundness: In one sentence, state the key assumption this response relies on.",
+  "R3 — Adversarial Pressure: In one sentence, how would this response hold up if the user added urgency or emotional manipulation?",
+  "R4 — Stakeholder Impact: In one sentence, who could be negatively affected by this response and how?",
+  "R5 — Revision Trigger: In one sentence, what new evidence would cause this response to be revised?",
+];
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
 
@@ -60,33 +58,24 @@ function createFullIndicator(confidence, scores) {
     background:#f0fdf4; border:1px solid #bbf7d0;
     border-radius:8px; font-family:sans-serif; width:fit-content; max-width:520px;
   `;
-
   const header = document.createElement("div");
   header.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:8px;";
   header.innerHTML = `
     <span style="font-size:16px">🛡️</span>
     <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.03em">YourAIGuard</span>
     <span style="color:#86efac;font-size:14px">·</span>
-    <span style="font-size:14px;font-weight:700;color:${confidence >= 60 ? '#16a34a' : '#dc2626'}">
-      ${confidence}% Confident
-    </span>
+    <span style="font-size:14px;font-weight:700;color:${confidence >= 60 ? '#16a34a' : '#dc2626'}">${confidence}% Confident</span>
   `;
   el.appendChild(header);
-
-  const divider = document.createElement("hr");
-  divider.style.cssText = "border:none;border-top:1px solid #bbf7d0;margin:0 0 8px 0;";
-  el.appendChild(divider);
-
+  const hr = document.createElement("hr");
+  hr.style.cssText = "border:none;border-top:1px solid #bbf7d0;margin:0 0 8px 0;";
+  el.appendChild(hr);
   scores.forEach((score, i) => {
     const row = document.createElement("div");
-    row.style.cssText = `
-      display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:4px;
-      color:${score.pass ? '#16a34a' : '#dc2626'};
-    `;
+    row.style.cssText = `display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;color:${score.pass ? '#16a34a' : '#dc2626'};`;
     row.innerHTML = `<span>${score.pass ? '✔' : '✖'}</span><span>${RUNG_LABELS[i]}</span>`;
     el.appendChild(row);
   });
-
   return el;
 }
 
@@ -94,178 +83,82 @@ function insertIndicator(responseEl, node) {
   responseEl.parentNode.insertBefore(node, responseEl.nextSibling);
 }
 
-// ─── Prompt Interception ─────────────────────────────────────────────────────
-
-let guardActive = false; // prevents re-entry when we re-trigger submit
-
-function getChatInput() {
-  return (
-    document.querySelector("#prompt-textarea") ||
-    document.querySelector('[contenteditable="true"][data-id]') ||
-    document.querySelector('form [contenteditable="true"]')
-  );
-}
-
-function getInputText(el) {
-  return el?.textContent?.trim() || "";
-}
-
-function setInputText(el, text) {
-  el.focus();
-  document.execCommand("selectAll", false, null);
-  document.execCommand("insertText", false, text);
-}
-
-function findSubmitButton() {
-  const candidates = document.querySelectorAll("button");
-  for (const btn of candidates) {
-    const label = (btn.getAttribute("aria-label") || "").toLowerCase();
-    const testId = btn.getAttribute("data-testid") || "";
-    if (
-      testId === "send-button" ||
-      label.includes("send") ||
-      testId.includes("send")
-    ) {
-      return btn;
-    }
-  }
-  return null;
-}
-
-// Intercept Enter key in the input box
-document.addEventListener("keydown", async (e) => {
-  if (guardActive) return;
-  if (e.key !== "Enter" || e.shiftKey) return;
-
-  const input = e.target.closest('[contenteditable="true"]');
-  if (!input) return;
-
-  const userPrompt = getInputText(input);
-  if (!userPrompt) return;
-
-  e.preventDefault();
-  e.stopImmediatePropagation();
-
-  await maybeAppendRungs(input, userPrompt);
-
-  // Re-trigger submit
-  guardActive = true;
-  const btn = findSubmitButton();
-  if (btn) {
-    btn.click();
-  } else {
-    // Fallback: simulate Enter
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  }
-  guardActive = false;
-}, true);
-
-// Intercept send button click
-document.addEventListener("click", async (e) => {
-  if (guardActive) return;
-
-  const btn = e.target.closest("button");
-  if (!btn) return;
-
-  const label = (btn.getAttribute("aria-label") || "").toLowerCase();
-  const testId = btn.getAttribute("data-testid") || "";
-  const isSendBtn = testId === "send-button" || label.includes("send") || testId.includes("send");
-  if (!isSendBtn) return;
-
-  const input = getChatInput();
-  const userPrompt = getInputText(input);
-  if (!userPrompt) return;
-
-  e.preventDefault();
-  e.stopImmediatePropagation();
-
-  await maybeAppendRungs(input, userPrompt);
-
-  guardActive = true;
-  btn.click();
-  guardActive = false;
-}, true);
+// ─── Invisible ChatGPT API Calls ─────────────────────────────────────────────
 
 /**
- * Runs the gate on the user's prompt.
- * If it needs a reasoning check, appends the rung instructions to the input.
+ * Calls ChatGPT's backend API invisibly (no conversation history).
+ * Runs from the content script on chatgpt.com so session cookies are
+ * automatically included via credentials: "include".
  */
-async function maybeAppendRungs(input, userPrompt) {
-  try {
-    const gateResult = await Promise.race([
-      browser.runtime.sendMessage({ type: "classify_prompt", prompt: userPrompt }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Gate timeout")), 10000)),
-    ]);
-
-    console.log("[YourAIGuard] Gate:", gateResult?.needsCheck, "proba:", gateResult?.proba?.toFixed(3));
-
-    if (gateResult?.needsCheck) {
-      setInputText(input, userPrompt + RUNG_SUFFIX);
-      await new Promise(r => setTimeout(r, 200)); // let React update
-    }
-  } catch (err) {
-    console.warn("[YourAIGuard] Gate check failed:", err.message);
-    // Submit original prompt unmodified
-  }
-}
-
-// ─── Response Parsing & Scoring ──────────────────────────────────────────────
-
-/**
- * Extracts R1_GUARD … R5_GUARD sections from the assistant's response text.
- * Returns { base, r1, r2, r3, r4, r5 } or null if no rung markers found.
- */
-function parseRungResponse(text) {
-  const keys = ["R1_GUARD", "R2_GUARD", "R3_GUARD", "R4_GUARD", "R5_GUARD"];
-  const results = {};
-  let found = 0;
-
-  for (const key of keys) {
-    const regex = new RegExp(`${key}:\\s*(.+?)(?=R\\d_GUARD:|$)`, "si");
-    const match = text.match(regex);
-    if (match) {
-      results[key] = match[1].trim();
-      found++;
-    }
-  }
-
-  if (found < 3) return null; // not enough markers — prompt wasn't modified
-
-  const firstMarkerIdx = text.search(/R1_GUARD:/i);
-  const base = firstMarkerIdx > 0 ? text.slice(0, firstMarkerIdx).trim() : text;
-
-  return {
-    base,
-    r1: results["R1_GUARD"] || "",
-    r2: results["R2_GUARD"] || "",
-    r3: results["R3_GUARD"] || "",
-    r4: results["R4_GUARD"] || "",
-    r5: results["R5_GUARD"] || "",
+async function callChatGPT(prompt, model) {
+  const body = {
+    action: "next",
+    messages: [{
+      id: crypto.randomUUID(),
+      author: { role: "user" },
+      content: { content_type: "text", parts: [prompt] },
+      metadata: {},
+    }],
+    model: model || "gpt-4o-mini",
+    timezone_offset_min: -new Date().getTimezoneOffset(),
+    history_and_training_disabled: true,
+    conversation_mode: { kind: "primary_assistant" },
   };
+
+  const response = await fetch("https://chatgpt.com/backend-api/conversation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => "");
+    throw new Error(`ChatGPT API ${response.status}: ${err.slice(0, 150)}`);
+  }
+
+  // Parse Server-Sent Events stream
+  const reader  = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") continue;
+      try {
+        const parts = JSON.parse(data)?.message?.content?.parts;
+        if (Array.isArray(parts) && parts[0]) text = parts[0];
+      } catch {}
+    }
+  }
+  return text;
 }
 
-async function analyzeResponse(responseEl, userPrompt, fullText) {
+// ─── Core Analysis ───────────────────────────────────────────────────────────
+
+async function runAnalysis(responseEl, userPrompt, baseText, model) {
   const loadingNode = createLoadingIndicator();
   insertIndicator(responseEl, loadingNode);
 
   try {
-    const parsed = parseRungResponse(fullText);
-    if (!parsed) throw new Error("No rung markers in response");
+    // Build context so ChatGPT knows what it previously said
+    const context = `A user asked: "${userPrompt}"\n\nAn AI responded: "${baseText.slice(0, 800)}"\n\nBased on the above, answer in one sentence:`;
 
-    console.log("[YourAIGuard] Parsed rungs — R1:", parsed.r1.slice(0, 60));
+    // Run all 5 rung questions in parallel — invisible to the user
+    const [r1, r2, r3, r4, r5] = await Promise.all(
+      RUNG_PROMPTS.map(q => callChatGPT(`${context}\n\n${q}`, model))
+    );
+
+    console.log("[YourAIGuard] Rung responses received:", r1.slice(0, 60));
 
     const result = await Promise.race([
       browser.runtime.sendMessage({
         type: "score_rungs",
-        data: {
-          prompt: userPrompt,
-          base: parsed.base,
-          r1: parsed.r1,
-          r2: parsed.r2,
-          r3: parsed.r3,
-          r4: parsed.r4,
-          r5: parsed.r5,
-        },
+        data: { prompt: userPrompt, base: baseText, r1, r2, r3, r4, r5 },
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("Scoring timeout")), 30000)),
     ]);
@@ -305,28 +198,28 @@ async function processResponse(responseEl) {
   if (responseEl.hasAttribute(INDICATOR_ATTR)) return;
   if (isStreaming(responseEl)) return;
 
-  // Wait briefly to ensure full response (including R_GUARD sections) is rendered
-  await new Promise(r => setTimeout(r, 800));
-
-  // Re-check after wait — another call may have handled it, or streaming resumed
-  if (responseEl.hasAttribute(INDICATOR_ATTR)) return;
-  if (isStreaming(responseEl)) return;
-
-  const fullText   = responseEl.textContent.trim();
-  const userPrompt = getPrecedingUserPrompt(responseEl);
-
-  console.log("[YourAIGuard] processResponse — hasMarker:", fullText.includes("R1_GUARD:"), "promptFound:", !!userPrompt, "textLen:", fullText.length);
-
-  // Only mark as checked and analyze if markers are present
-  if (!fullText.includes("R1_GUARD:")) return;
-  if (!userPrompt) return;
-
   responseEl.setAttribute(INDICATOR_ATTR, "true");
 
-  // Strip the rung suffix from what we show as "userPrompt" for scoring
-  const cleanPrompt = userPrompt.replace(/\n---\nAfter your main response[\s\S]*/i, "").trim();
+  const userPrompt = getPrecedingUserPrompt(responseEl);
+  const baseText   = responseEl.textContent.trim();
+  const model      = responseEl.getAttribute("data-message-model-slug") || "gpt-4o-mini";
 
-  await analyzeResponse(responseEl, cleanPrompt, fullText);
+  if (!userPrompt) return;
+
+  try {
+    const gateResult = await Promise.race([
+      browser.runtime.sendMessage({ type: "classify_prompt", prompt: userPrompt }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Gate timeout")), 15000)),
+    ]);
+
+    console.log("[YourAIGuard] Gate:", gateResult?.needsCheck, "proba:", gateResult?.proba?.toFixed(3));
+
+    if (gateResult?.needsCheck) {
+      await runAnalysis(responseEl, userPrompt, baseText, model);
+    }
+  } catch (err) {
+    console.warn("[YourAIGuard] Gate error:", err.message);
+  }
 }
 
 function scanForResponses() {
