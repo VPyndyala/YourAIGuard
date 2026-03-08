@@ -34,5 +34,5 @@
     "rung_model.json",
     "transformers.min.js"
   ],
-  "content_security_policy": "script-src 'self' 'unsafe-eval' 'unsafe-inline' 'wasm-unsafe-eval'; object-src 'self';"
+  "content_security_policy": "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; object-src 'self';"
 }
