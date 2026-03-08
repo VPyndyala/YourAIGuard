@@ -90,35 +90,16 @@ function insertIndicator(responseEl, node) {
 // ─── ChatGPT Session API ──────────────────────────────────────────────────────
 
 /**
- * Fetches the sentinel token ChatGPT requires on every backend request.
- * Uses the user's session cookies (same origin, credentials: "include").
- */
-async function getSentinelToken() {
-  try {
-    const res = await fetch("https://chatgpt.com/backend-api/sentinel/chat-requirements", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.token || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Sends one invisible message to ChatGPT's backend using the user's session.
- * history_and_training_disabled: true means it won't appear in chat history.
- * Returns the full assistant text.
+ * Reuses the sentinel/proof headers captured from the user's most recent real
+ * ChatGPT request — the same tokens the frontend already computed.
+ * history_and_training_disabled: true so it won't appear in chat history.
  */
 async function callChatGPTSession(prompt) {
-  const sentinelToken = await getSentinelToken();
+  // Get the sentinel headers ChatGPT's frontend just used for the real request
+  const captured = await browser.runtime.sendMessage({ type: "get_conv_headers" });
 
-  const headers = { "Content-Type": "application/json" };
-  if (sentinelToken) headers["openai-sentinel-chat-requirements-token"] = sentinelToken;
+  const headers = { "Content-Type": "application/json", ...captured };
 
   const body = {
     action: "next",
