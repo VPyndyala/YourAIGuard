@@ -13,21 +13,6 @@ let embedder  = null;
 let gateModel = null;
 let rungModel = null;
 let ready     = false;
-let capturedToken = null;
-
-// Capture ChatGPT's Bearer token from its own outgoing API requests
-browser.webRequest.onBeforeSendHeaders.addListener(
-  (details) => {
-    const authHeader = details.requestHeaders.find(
-      h => h.name.toLowerCase() === "authorization"
-    );
-    if (authHeader?.value?.startsWith("Bearer ")) {
-      capturedToken = authHeader.value.slice(7);
-    }
-  },
-  { urls: ["https://chatgpt.com/backend-api/*"] },
-  ["requestHeaders"]
-);
 
 async function init() {
   try {
@@ -94,7 +79,6 @@ async function scoreRungs({ prompt, base, r1, r2, r3, r4, r5 }) {
 browser.runtime.onMessage.addListener((message) => {
   if (message.type === "classify_prompt") return classifyGate(message.prompt);
   if (message.type === "score_rungs")     return scoreRungs(message.data);
-  if (message.type === "get_token")       return Promise.resolve({ token: capturedToken });
 });
 
 init();

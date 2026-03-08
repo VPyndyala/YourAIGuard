@@ -95,26 +95,13 @@ function insertIndicator(responseEl, node) {
 // Intercept ChatGPT's own fetch calls to capture the Bearer token it uses.
 // This is more reliable than scraping the session endpoint.
 
-async function getAuthToken() {
-  // Background captures the token via webRequest; poll until available
-  const deadline = Date.now() + 30000;
-  while (Date.now() < deadline) {
-    const result = await browser.runtime.sendMessage({ type: "get_token" });
-    if (result?.token) {
-      console.log("[YourAIGuard] Auth token captured ✓");
-      return result.token;
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-  console.warn("[YourAIGuard] Auth token not captured after 30s");
-  return null;
-}
-
 /**
  * Calls ChatGPT's backend API directly with a fresh temporary conversation.
+ * Runs as a same-origin request from the content script so session cookies
+ * are included automatically — no Bearer token needed.
  * Nothing is added to the visible chat.
  */
-async function callChatGPT(accessToken, fullPrompt, model) {
+async function callChatGPT(fullPrompt, model) {
   const body = {
     action: "next",
     messages: [{
@@ -125,17 +112,13 @@ async function callChatGPT(accessToken, fullPrompt, model) {
     }],
     model: model || "gpt-4o-mini",
     timezone_offset_min: -new Date().getTimezoneOffset(),
-    history_and_training_disabled: true,   // keeps it out of chat history
+    history_and_training_disabled: true,
     conversation_mode: { kind: "primary_assistant" },
   };
 
-  const response = await fetch("https://chatgpt.com/backend-api/conversation", {
+  const response = await fetch("/backend-api/conversation", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${accessToken}`,
-      "Accept": "text/event-stream",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 
@@ -175,18 +158,14 @@ async function runAnalysis(responseEl, userPrompt, baseText, model) {
   insertIndicator(responseEl, loadingNode);
 
   try {
-    const accessToken = await getAuthToken();
-    console.log("[YourAIGuard] Auth token:", accessToken ? "found" : "MISSING");
-    if (!accessToken) throw new Error("Could not get auth token");
-
     // Build context prefix so ChatGPT knows what it previously said
     const context = `The user asked: "${userPrompt}"\n\nYou previously responded: "${baseText}"\n\nNow answer the following in one sentence only:`;
 
-    // Call ChatGPT API for each rung — invisible to the chat
+    // Call ChatGPT API for each rung — invisible to chat, cookies auto-included
     const rungResponses = [];
     for (let i = 0; i < RUNG_PROMPTS.length; i++) {
       const fullPrompt = `${context}\n\n${RUNG_PROMPTS[i]}`;
-      const response   = await callChatGPT(accessToken, fullPrompt, model);
+      const response   = await callChatGPT(fullPrompt, model);
       console.log(`[YourAIGuard] R${i + 1} (${response.length} chars):`, response.slice(0, 100));
       rungResponses.push(response);
     }
