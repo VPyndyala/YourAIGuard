@@ -114,12 +114,29 @@ function getChatInput() {
   );
 }
 
-function getSubmitButton() {
-  return (
-    document.querySelector('[data-testid="send-button"]') ||
-    document.querySelector('button[aria-label*="Send"]') ||
-    document.querySelector('button[aria-label*="send"]')
-  );
+async function waitForSubmitButton(timeoutMs = 5000) {
+  const selectors = [
+    '[data-testid="send-button"]',
+    'button[aria-label*="Send"]',
+    'button[aria-label*="send"]',
+    'button[data-testid="composer-submit-button"]',
+    'button[aria-label="Send message"]',
+    'button[aria-label="Send prompt"]',
+  ];
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const sel of selectors) {
+      const btn = document.querySelector(sel);
+      if (btn && !btn.disabled && btn.offsetParent !== null) return btn;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  // Last resort: find any enabled button near the input area
+  const allButtons = document.querySelectorAll('form button, [role="presentation"] button');
+  for (const btn of allButtons) {
+    if (!btn.disabled && btn.offsetParent !== null && btn.querySelector('svg')) return btn;
+  }
+  return null;
 }
 
 function setInputText(element, text) {
@@ -150,9 +167,9 @@ async function sendAndWait(text) {
   const beforeCount = countAssistantMessages();
 
   setInputText(input, text);
-  await new Promise(r => setTimeout(r, 300)); // let React catch up
+  await new Promise(r => setTimeout(r, 500)); // let React catch up + button appear
 
-  const btn = getSubmitButton();
+  const btn = await waitForSubmitButton();
   if (!btn) throw new Error("Submit button not found");
   btn.click();
 
