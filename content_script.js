@@ -91,16 +91,35 @@ function insertIndicator(responseEl, node) {
   responseEl.parentNode.insertBefore(node, responseEl.nextSibling);
 }
 
-// ─── ChatGPT API (invisible — does not appear in chat) ───────────────────────
+// ─── Auth Token Interception ─────────────────────────────────────────────────
+// Intercept ChatGPT's own fetch calls to capture the Bearer token it uses.
+// This is more reliable than scraping the session endpoint.
+
+let capturedToken = null;
+
+(function interceptFetch() {
+  const originalFetch = window.fetch;
+  window.fetch = function (...args) {
+    const [url, options] = args;
+    if (typeof url === "string" && url.includes("backend-api")) {
+      const auth =
+        options?.headers?.["Authorization"] ||
+        options?.headers?.["authorization"];
+      if (auth && auth.startsWith("Bearer ")) {
+        capturedToken = auth.slice(7);
+      }
+    }
+    return originalFetch.apply(this, args);
+  };
+})();
 
 async function getAuthToken() {
-  try {
-    const resp = await fetch("/api/auth/session");
-    const data = await resp.json();
-    return data?.accessToken || null;
-  } catch {
-    return null;
+  // Wait up to 30s for ChatGPT to make its first API call so we can capture the token
+  const deadline = Date.now() + 30000;
+  while (!capturedToken && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 300));
   }
+  return capturedToken;
 }
 
 /**
