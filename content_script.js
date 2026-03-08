@@ -1,14 +1,16 @@
 /**
  * YourAIGuard - Content Script
- * Monitors ChatGPT responses and displays a confidence indicator
- * below each assistant message.
+ * Monitors ChatGPT for completed assistant responses.
+ * Extracts the user prompt that triggered each response,
+ * runs it through the gate model, and shows a confidence
+ * indicator only when the prompt involves reasoning.
  */
 
 const INDICATOR_CLASS = "youraiguard-indicator";
 const INDICATOR_ATTR = "data-youraiguard-checked";
 
 /**
- * Creates and returns a confidence indicator element.
+ * Creates the YourAIGuard confidence indicator element.
  */
 function createIndicator() {
   const wrapper = document.createElement("div");
@@ -63,46 +65,103 @@ function createIndicator() {
 }
 
 /**
- * Finds all assistant response containers on the page and
- * attaches a confidence indicator to any that don't have one yet.
+ * Given an assistant message element, finds the user prompt
+ * that immediately preceded it in the conversation.
  */
-function attachIndicators() {
-  // ChatGPT marks assistant messages with this attribute
-  const responses = document.querySelectorAll(
-    '[data-message-author-role="assistant"]'
-  );
-
-  responses.forEach((response) => {
-    // Skip if we already labelled this response
-    if (response.hasAttribute(INDICATOR_ATTR)) return;
-
-    // Skip if the response is still streaming (no text content yet)
-    const content = response.querySelector(".markdown, [class*='prose']");
-    if (!content || content.textContent.trim().length === 0) return;
-
-    // Mark it so we don't double-process
-    response.setAttribute(INDICATOR_ATTR, "true");
-
-    // Insert the indicator directly after the response container (not inside it)
-    const indicator = createIndicator();
-    response.parentNode.insertBefore(indicator, response.nextSibling);
-  });
+function getPrecedingUserPrompt(assistantEl) {
+  // Walk up to the message container, then look for the previous user message
+  let node = assistantEl.parentElement;
+  while (node) {
+    const prev = node.previousElementSibling;
+    if (prev) {
+      const userMsg = prev.querySelector('[data-message-author-role="user"]');
+      if (userMsg) {
+        return userMsg.textContent.trim();
+      }
+    }
+    node = node.parentElement;
+  }
+  return null;
 }
 
 /**
- * Observes the chat container for new messages being added or updated.
+ * Checks if a response is still streaming by looking for
+ * the animated cursor or empty content.
+ */
+function isStreaming(responseEl) {
+  const content = responseEl.querySelector(".markdown, [class*='prose']");
+  if (!content || content.textContent.trim().length === 0) return true;
+  // ChatGPT adds a streaming cursor element while generating
+  if (responseEl.querySelector(".result-streaming, [data-testid='streaming-cursor']")) return true;
+  return false;
+}
+
+/**
+ * Processes a single assistant response element:
+ * - Extracts preceding user prompt
+ * - Sends to gate model via background
+ * - Inserts indicator if gate says it needs a check
+ */
+async function processResponse(responseEl) {
+  if (responseEl.hasAttribute(INDICATOR_ATTR)) return;
+  if (isStreaming(responseEl)) return;
+
+  // Mark immediately to prevent double-processing
+  responseEl.setAttribute(INDICATOR_ATTR, "true");
+
+  const userPrompt = getPrecedingUserPrompt(responseEl);
+
+  // If we can't find the prompt, default to showing the indicator (safe fallback)
+  if (!userPrompt) {
+    insertIndicator(responseEl);
+    return;
+  }
+
+  try {
+    const result = await browser.runtime.sendMessage({
+      type: "classify_prompt",
+      prompt: userPrompt,
+    });
+
+    if (result && result.needsCheck) {
+      insertIndicator(responseEl);
+    }
+  } catch (err) {
+    // If gate fails for any reason, show indicator (safe fallback)
+    insertIndicator(responseEl);
+  }
+}
+
+/**
+ * Inserts the indicator directly after the response container.
+ */
+function insertIndicator(responseEl) {
+  // Avoid duplicates
+  if (responseEl.nextElementSibling?.classList.contains(INDICATOR_CLASS)) return;
+  const indicator = createIndicator();
+  responseEl.parentNode.insertBefore(indicator, responseEl.nextSibling);
+}
+
+/**
+ * Scans the page for new completed assistant responses.
+ */
+function scanForResponses() {
+  const responses = document.querySelectorAll(
+    '[data-message-author-role="assistant"]'
+  );
+  responses.forEach((el) => processResponse(el));
+}
+
+/**
+ * Watches for DOM changes (new messages being added or streaming finishing).
  */
 function startObserver() {
   const observer = new MutationObserver(() => {
-    attachIndicators();
+    scanForResponses();
   });
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
-// Run on page load and start watching for new responses
-attachIndicators();
+// Kick off
+scanForResponses();
 startObserver();
