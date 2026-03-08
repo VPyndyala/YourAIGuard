@@ -97,28 +97,41 @@ function insertIndicator(responseEl, node) {
 
 let capturedToken = null;
 
-(function interceptFetch() {
-  const originalFetch = window.fetch;
-  window.fetch = function (...args) {
-    const [url, options] = args;
-    if (typeof url === "string" && url.includes("backend-api")) {
-      const auth =
-        options?.headers?.["Authorization"] ||
-        options?.headers?.["authorization"];
-      if (auth && auth.startsWith("Bearer ")) {
-        capturedToken = auth.slice(7);
-      }
-    }
-    return originalFetch.apply(this, args);
-  };
+// Inject interceptor into the PAGE's JS context (content scripts are sandboxed)
+// so we can capture ChatGPT's Authorization header when it makes its own API calls.
+(function injectInterceptor() {
+  const script = document.createElement("script");
+  script.textContent = `
+    (function() {
+      const _fetch = window.fetch;
+      window.fetch = function(...args) {
+        const [url, options] = args;
+        if (typeof url === 'string' && url.includes('backend-api')) {
+          const auth = options?.headers?.['Authorization'] || options?.headers?.['authorization'];
+          if (auth && auth.startsWith('Bearer ')) {
+            window.dispatchEvent(new CustomEvent('__youraiguard_token__', { detail: auth.slice(7) }));
+          }
+        }
+        return _fetch.apply(this, args);
+      };
+    })();
+  `;
+  (document.head || document.documentElement).appendChild(script);
+  script.remove();
 })();
 
+// Listen for the token event dispatched from page context
+window.addEventListener("__youraiguard_token__", (e) => {
+  capturedToken = e.detail;
+});
+
 async function getAuthToken() {
-  // Wait up to 30s for ChatGPT to make its first API call so we can capture the token
+  // Wait up to 30s for ChatGPT to make its first API call
   const deadline = Date.now() + 30000;
   while (!capturedToken && Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 300));
   }
+  console.log("[YourAIGuard] Auth token:", capturedToken ? "captured ✓" : "MISSING after 30s");
   return capturedToken;
 }
 
