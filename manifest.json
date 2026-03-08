@@ -26,8 +26,7 @@
   ],
   "permissions": [
     "activeTab",
-    "storage",
-    "https://api.openai.com/*"
+    "storage"
   ],
   "web_accessible_resources": [
     "gate_model.json",
