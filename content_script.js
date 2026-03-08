@@ -305,17 +305,23 @@ async function processResponse(responseEl) {
   if (responseEl.hasAttribute(INDICATOR_ATTR)) return;
   if (isStreaming(responseEl)) return;
 
-  responseEl.setAttribute(INDICATOR_ATTR, "true");
+  // Wait briefly to ensure full response (including R_GUARD sections) is rendered
+  await new Promise(r => setTimeout(r, 800));
+
+  // Re-check after wait — another call may have handled it, or streaming resumed
+  if (responseEl.hasAttribute(INDICATOR_ATTR)) return;
+  if (isStreaming(responseEl)) return;
 
   const fullText   = responseEl.textContent.trim();
   const userPrompt = getPrecedingUserPrompt(responseEl);
 
   console.log("[YourAIGuard] processResponse — hasMarker:", fullText.includes("R1_GUARD:"), "promptFound:", !!userPrompt, "textLen:", fullText.length);
 
+  // Only mark as checked and analyze if markers are present
+  if (!fullText.includes("R1_GUARD:")) return;
   if (!userPrompt) return;
 
-  // Only analyze if the response contains our rung markers
-  if (!fullText.includes("R1_GUARD:")) return;
+  responseEl.setAttribute(INDICATOR_ATTR, "true");
 
   // Strip the rung suffix from what we show as "userPrompt" for scoring
   const cleanPrompt = userPrompt.replace(/\n---\nAfter your main response[\s\S]*/i, "").trim();
