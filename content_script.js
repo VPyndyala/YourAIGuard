@@ -310,6 +310,8 @@ async function processResponse(responseEl) {
   const fullText   = responseEl.textContent.trim();
   const userPrompt = getPrecedingUserPrompt(responseEl);
 
+  console.log("[YourAIGuard] processResponse — hasMarker:", fullText.includes("R1_GUARD:"), "promptFound:", !!userPrompt, "textLen:", fullText.length);
+
   if (!userPrompt) return;
 
   // Only analyze if the response contains our rung markers
