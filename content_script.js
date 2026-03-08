@@ -83,64 +83,47 @@ function insertIndicator(responseEl, node) {
   responseEl.parentNode.insertBefore(node, responseEl.nextSibling);
 }
 
-// ─── Invisible ChatGPT API Calls ─────────────────────────────────────────────
+// ─── OpenAI API Calls ────────────────────────────────────────────────────────
+
+async function getApiKey() {
+  const { openaiApiKey } = await browser.storage.local.get("openaiApiKey");
+  return openaiApiKey || null;
+}
 
 /**
- * Calls ChatGPT's backend API invisibly (no conversation history).
- * Runs from the content script on chatgpt.com so session cookies are
- * automatically included via credentials: "include".
+ * Calls the official OpenAI API with the user's stored API key.
+ * Invisible to the user — no conversation history, separate request.
  */
-async function callChatGPT(prompt, model) {
-  const body = {
-    action: "next",
-    messages: [{
-      id: crypto.randomUUID(),
-      author: { role: "user" },
-      content: { content_type: "text", parts: [prompt] },
-      metadata: {},
-    }],
-    model: model || "gpt-4o-mini",
-    timezone_offset_min: -new Date().getTimezoneOffset(),
-    history_and_training_disabled: true,
-    conversation_mode: { kind: "primary_assistant" },
-  };
+async function callOpenAI(prompt) {
+  const apiKey = await getApiKey();
+  if (!apiKey) throw new Error("No API key — open the YourAIGuard popup to add your OpenAI key.");
 
-  const response = await fetch("https://chatgpt.com/backend-api/conversation", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(body),
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 150,
+      temperature: 0,
+    }),
   });
 
   if (!response.ok) {
-    const err = await response.text().catch(() => "");
-    throw new Error(`ChatGPT API ${response.status}: ${err.slice(0, 150)}`);
+    const err = await response.json().catch(() => ({}));
+    throw new Error(`OpenAI API ${response.status}: ${err?.error?.message || "unknown error"}`);
   }
 
-  // Parse Server-Sent Events stream
-  const reader  = response.body.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6).trim();
-      if (data === "[DONE]") continue;
-      try {
-        const parts = JSON.parse(data)?.message?.content?.parts;
-        if (Array.isArray(parts) && parts[0]) text = parts[0];
-      } catch {}
-    }
-  }
-  return text;
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
 // ─── Core Analysis ───────────────────────────────────────────────────────────
 
-async function runAnalysis(responseEl, userPrompt, baseText, model) {
+async function runAnalysis(responseEl, userPrompt, baseText) {
   const loadingNode = createLoadingIndicator();
   insertIndicator(responseEl, loadingNode);
 
@@ -150,7 +133,7 @@ async function runAnalysis(responseEl, userPrompt, baseText, model) {
 
     // Run all 5 rung questions in parallel — invisible to the user
     const [r1, r2, r3, r4, r5] = await Promise.all(
-      RUNG_PROMPTS.map(q => callChatGPT(`${context}\n\n${q}`, model))
+      RUNG_PROMPTS.map(q => callOpenAI(`${context}\n\n${q}`))
     );
 
     console.log("[YourAIGuard] Rung responses received:", r1.slice(0, 60));
@@ -202,7 +185,6 @@ async function processResponse(responseEl) {
 
   const userPrompt = getPrecedingUserPrompt(responseEl);
   const baseText   = responseEl.textContent.trim();
-  const model      = responseEl.getAttribute("data-message-model-slug") || "gpt-4o-mini";
 
   if (!userPrompt) return;
 
@@ -215,7 +197,7 @@ async function processResponse(responseEl) {
     console.log("[YourAIGuard] Gate:", gateResult?.needsCheck, "proba:", gateResult?.proba?.toFixed(3));
 
     if (gateResult?.needsCheck) {
-      await runAnalysis(responseEl, userPrompt, baseText, model);
+      await runAnalysis(responseEl, userPrompt, baseText);
     }
   } catch (err) {
     console.warn("[YourAIGuard] Gate error:", err.message);

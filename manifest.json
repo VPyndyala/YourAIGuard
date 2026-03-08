@@ -10,7 +10,8 @@
   },
   "browser_action": {
     "default_icon": "icons/icon48.png",
-    "default_title": "YourAIGuard"
+    "default_title": "YourAIGuard",
+    "default_popup": "popup.html"
   },
   "background": {
     "page": "background.html",
@@ -25,7 +26,8 @@
   ],
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "https://api.openai.com/*"
   ],
   "web_accessible_resources": [
     "gate_model.json",
