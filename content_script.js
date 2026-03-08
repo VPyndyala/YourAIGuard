@@ -283,8 +283,9 @@ async function processResponse(responseEl) {
 }
 
 function scanForResponses() {
-  document.querySelectorAll('[data-message-author-role="assistant"]')
-    .forEach(el => processResponse(el));
+  const found = document.querySelectorAll('[data-message-author-role="assistant"]');
+  console.log("[YourAIGuard] scanForResponses — found:", found.length, "assistant elements");
+  found.forEach(el => processResponse(el));
 }
 
 function startObserver() {
