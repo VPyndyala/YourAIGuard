@@ -96,8 +96,8 @@ function insertIndicator(responseEl, node) {
  * history_and_training_disabled: true so it won't appear in chat history.
  */
 async function callChatGPTSession(prompt) {
-  // Get the sentinel headers ChatGPT's frontend just used for the real request
   const captured = await browser.runtime.sendMessage({ type: "get_conv_headers" });
+  console.log("[YourAIGuard] Captured headers:", JSON.stringify(captured));
 
   const headers = { "Content-Type": "application/json", ...captured };
 
