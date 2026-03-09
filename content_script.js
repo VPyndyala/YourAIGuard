@@ -57,58 +57,105 @@ function createLoadingIndicator() {
 
 function createTimelinePanel(history, border) {
   const panel = document.createElement("div");
-  panel.style.cssText = `
-    display:none; margin-top:10px; padding-top:10px;
-    border-top:1px solid ${border};
-  `;
+  panel.style.cssText = `display:none; margin-top:10px; padding-top:10px; border-top:1px solid ${border};`;
 
-  const RUNG_TIMELINE_LABELS = ["R1 Risk", "R2 Facts", "R3 Advers.", "R4 Stakeh.", "R5 Revision"];
+  const N = history.length;
+  if (N < 2) return panel;
 
-  // ── Rung dot grid ──
+  const NS     = "http://www.w3.org/2000/svg";
+  const STEP   = 20;   // px per turn
+  const LPAD   = 60;   // left label column
+  const RPAD   = 8;
+  const CONF_H = 50;   // confidence chart height
+  const RUNG_H = 16;   // per-rung track height
+  const GAP    = 4;    // gap between rung tracks
+  const XAXIS  = 16;   // x-axis label height
+
+  const chartW = N * STEP;
+  const totalW = LPAD + chartW + RPAD;
+  const totalH = 14 + CONF_H + 10 + 5 * (RUNG_H + GAP) + XAXIS;
+
+  const mk = (tag, attrs = {}, text) => {
+    const e = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+
+  const tip = (node, text) => { node.appendChild(mk("title", {}, text)); return node; };
+  const xAt = i => LPAD + i * STEP + STEP / 2;
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "overflow-x:auto;";
+
+  const svg = mk("svg", { width: totalW, height: totalH });
+
+  // ── Confidence line chart ─────────────────────────────────────────
+  const confTop = 12;
+  const confBot = confTop + CONF_H;
+
+  // Section label
+  svg.appendChild(mk("text", { x: LPAD, y: confTop - 2, "font-size": "9", fill: "#9ca3af" }, "Checks passed %"));
+
+  // Gridlines at 0 / 60 / 100
+  [[0, "#e5e7eb", "0.5", ""], [60, "#fbbf24", "1", "3,3"], [100, "#e5e7eb", "0.5", ""]].forEach(([pct, stroke, sw, dash]) => {
+    const y = confBot - (pct / 100) * CONF_H;
+    const line = mk("line", { x1: LPAD, y1: y, x2: LPAD + chartW, y2: y, stroke, "stroke-width": sw });
+    if (dash) line.setAttribute("stroke-dasharray", dash);
+    svg.appendChild(line);
+    svg.appendChild(mk("text", { x: LPAD - 3, y: y + 3, "text-anchor": "end", "font-size": "8", fill: "#9ca3af" }, pct + "%"));
+  });
+
+  // Area fill under confidence line
+  const areaPts = [`${xAt(0)},${confBot}`,
+    ...history.map((h, i) => `${xAt(i)},${confBot - (h.confidence / 100) * CONF_H}`),
+    `${xAt(N - 1)},${confBot}`].join(" ");
+  svg.appendChild(mk("polygon", { points: areaPts, fill: "#dcfce7", opacity: "0.6" }));
+
+  // Confidence polyline
+  const linePts = history.map((h, i) => `${xAt(i)},${confBot - (h.confidence / 100) * CONF_H}`).join(" ");
+  svg.appendChild(mk("polyline", { points: linePts, fill: "none", stroke: "#16a34a", "stroke-width": "1.5", "stroke-linejoin": "round" }));
+
+  // Confidence dots
+  history.forEach((h, i) => {
+    const cy = confBot - (h.confidence / 100) * CONF_H;
+    tip(svg.appendChild(mk("circle", { cx: xAt(i), cy, r: "3", fill: h.confidence >= 60 ? "#16a34a" : "#ef4444" })),
+      `q${i + 1}: ${h.confidence}% (${h.confidence >= 60 ? "pass" : "fail"})`);
+  });
+
+  // ── Rung tracks ───────────────────────────────────────────────────
+  const RLABELS = ["R1 Risk", "R2 Facts", "R3 Advers.", "R4 Stakeh.", "R5 Rev."];
+  const rungTop = confBot + 12;
+
   for (let k = 0; k < 5; k++) {
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:4px;margin-bottom:5px;";
+    const trackY = rungTop + k * (RUNG_H + GAP);
+    const passY  = trackY + 3;
+    const failY  = trackY + RUNG_H - 3;
 
-    const label = document.createElement("span");
-    label.style.cssText = "font-size:10px;color:#6b7280;width:72px;flex-shrink:0;";
-    label.textContent = RUNG_TIMELINE_LABELS[k];
-    row.appendChild(label);
+    svg.appendChild(mk("text", { x: LPAD - 3, y: trackY + RUNG_H / 2 + 3, "text-anchor": "end", "font-size": "9", fill: "#6b7280" }, RLABELS[k]));
+    svg.appendChild(mk("rect", { x: LPAD, y: trackY, width: chartW, height: RUNG_H, fill: "#f9fafb", rx: "2" }));
 
-    const dots = document.createElement("div");
-    dots.style.cssText = "display:flex;gap:3px;align-items:center;flex-wrap:wrap;";
-    history.forEach(h => {
-      const dot = document.createElement("span");
-      dot.style.cssText = `
-        display:inline-block; width:9px; height:9px; border-radius:50%;
-        background:${h.rungs[k] ? "#16a34a" : "#ef4444"};
-        flex-shrink:0;
-      `;
-      dots.appendChild(dot);
+    // Dashed step guide
+    const stepPts = history.map((h, i) => `${xAt(i)},${h.rungs[k] ? passY : failY}`).join(" ");
+    svg.appendChild(mk("polyline", { points: stepPts, fill: "none", stroke: "#d1d5db", "stroke-width": "1", "stroke-dasharray": "2,2" }));
+
+    // Dots
+    history.forEach((h, i) => {
+      const pass = h.rungs[k];
+      tip(svg.appendChild(mk("circle", { cx: xAt(i), cy: pass ? passY : failY, r: "4", fill: pass ? "#16a34a" : "#ef4444" })),
+        `q${i + 1}: ${pass ? "Pass" : "Fail"}`);
     });
-    row.appendChild(dots);
-    panel.appendChild(row);
   }
 
-  // ── Confidence bar chart ──
-  const chartLabel = document.createElement("div");
-  chartLabel.style.cssText = "font-size:10px;color:#6b7280;margin-top:10px;margin-bottom:4px;";
-  chartLabel.textContent = "Confidence per turn";
-  panel.appendChild(chartLabel);
-
-  const chart = document.createElement("div");
-  chart.style.cssText = "display:flex;align-items:flex-end;gap:3px;height:36px;";
-  history.forEach(h => {
-    const bar = document.createElement("div");
-    bar.style.cssText = `
-      width:9px; min-height:2px; height:${Math.round(h.confidence * 0.36)}px;
-      border-radius:2px 2px 0 0; flex-shrink:0;
-      background:${h.confidence >= 60 ? "#16a34a" : "#ef4444"};
-    `;
-    bar.title = `${h.confidence}%`;
-    chart.appendChild(bar);
+  // ── X-axis labels ─────────────────────────────────────────────────
+  history.forEach((_, i) => {
+    if (N <= 12 || i === 0 || (i + 1) % 5 === 0 || i === N - 1) {
+      svg.appendChild(mk("text", { x: xAt(i), y: rungTop + 5 * (RUNG_H + GAP) + 11, "text-anchor": "middle", "font-size": "8", fill: "#9ca3af" }, `q${i + 1}`));
+    }
   });
-  panel.appendChild(chart);
 
+  wrap.appendChild(svg);
+  panel.appendChild(wrap);
   return panel;
 }
 
@@ -149,8 +196,8 @@ function createIndicator(confidence, scores, instability, history) {
     `;
   }
 
-  // ── Timeline toggle button (shown if we have history) ──
-  if (history?.length > 1) {
+  // ── Timeline toggle button (only shown after phase is established at turn 10) ──
+  if (hasPhase && history?.length > 1) {
     const toggleBtn = document.createElement("button");
     toggleBtn.textContent = "📊";
     toggleBtn.title = "Toggle timeline";
