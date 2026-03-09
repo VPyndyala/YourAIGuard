@@ -48,7 +48,7 @@ function createLoadingIndicator() {
     <span style="font-size:16px">🛡️</span>
     <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.03em">YourAIGuard</span>
     <span style="color:#86efac;font-size:14px">·</span>
-    <span style="font-size:13px;color:#16a34a;font-weight:500">Analysing…</span>
+    <span style="font-size:13px;color:#16a34a;font-weight:500">Checking response…</span>
   `;
   return el;
 }
@@ -75,19 +75,19 @@ function createIndicator(confidence, scores, instability) {
     <span style="font-size:16px">🛡️</span>
     <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.03em">YourAIGuard</span>
     <span style="color:#86efac;font-size:14px">·</span>
-    <span style="font-size:14px;font-weight:700;color:${confidence >= 60 ? '#16a34a' : '#dc2626'}">${confidence}% confident</span>
   `;
 
   if (hasPhase) {
     headerHTML += `
+      <span style="font-size:14px;font-weight:700;color:${confidence >= 60 ? '#16a34a' : '#dc2626'}">${confidence}% confident</span>
       <span style="color:#d1d5db;font-size:14px">·</span>
       <span style="font-size:13px;font-weight:700;color:${phase.color}">${phase.emoji} ${phase.label}</span>
       <span style="font-size:11px;color:#9ca3af;">(S=${instability.S}, turn ${instability.turns})</span>
     `;
   } else {
-    const remaining = 10 - (instability?.turns ?? 0);
+    const turn = (instability?.turns ?? 0) + 1;
     headerHTML += `
-      <span style="font-size:11px;color:#9ca3af;">(${remaining} more turn${remaining !== 1 ? "s" : ""} for phase tracking)</span>
+      <span style="font-size:13px;color:#16a34a;font-weight:500">Calibrating — turn ${turn} of 10</span>
     `;
   }
 
