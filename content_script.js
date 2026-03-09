@@ -157,8 +157,7 @@ async function runAnalysis(responseEl, userPrompt, baseText) {
 
     loadingNode.replaceWith(createIndicator(result.confidence, result.scores, result.instability));
 
-  } catch (err) {
-    console.error("[YourAIGuard] Analysis failed:", err.message);
+  } catch {
     loadingNode.remove();
   }
 }
@@ -203,13 +202,11 @@ async function processResponse(responseEl) {
       new Promise((_, reject) => setTimeout(() => reject(new Error("Gate timeout")), 15000)),
     ]);
 
-    console.log("[YourAIGuard] Gate:", gateResult?.needsCheck, "proba:", gateResult?.proba?.toFixed(3));
-
     if (gateResult?.needsCheck) {
       await runAnalysis(responseEl, userPrompt, baseText);
     }
-  } catch (err) {
-    console.warn("[YourAIGuard] Gate error:", err.message);
+  } catch {
+    // gate unavailable, skip silently
   }
 }
 

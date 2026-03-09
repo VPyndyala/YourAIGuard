@@ -90,7 +90,6 @@ async function init() {
     );
 
     ready = true;
-    console.log("[YourAIGuard] Ready. Gate threshold:", gateModel.threshold);
   } catch (err) {
     console.error("[YourAIGuard] Init failed:", err);
   }
