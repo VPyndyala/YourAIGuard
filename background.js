@@ -152,12 +152,16 @@ async function scoreRungs_local(prompt, base) {
 
 // ─── Temporal Instability (paper: S_t = Δ_t + B_t + M_t) ─────────────────────
 
-function addTurn(conversationId, rungScores) {
+function addTurn(conversationId, rungScores, confidence) {
   if (!conversationHistory[conversationId]) conversationHistory[conversationId] = [];
-  const rungs = rungScores.map(s => s.pass);          // [bool × 5]
-  const f     = rungs.filter(p => !p).length;          // failed rung count
-  const e     = f > 0 ? 1 : 0;                         // binary failure signature
-  conversationHistory[conversationId].push({ f, e, rungs });
+  const rungs = rungScores.map(s => s.pass);
+  const f     = rungs.filter(p => !p).length;
+  const e     = f > 0 ? 1 : 0;
+  conversationHistory[conversationId].push({ f, e, rungs, confidence });
+}
+
+function getHistory(conversationId) {
+  return (conversationHistory[conversationId] || []).slice(-30);
 }
 
 function computeInstabilityScore(conversationId) {
@@ -222,9 +226,10 @@ browser.runtime.onMessage.addListener((message) => {
     return scoreRungs_local(prompt, base).then(result => {
       if (!result) return null;
       if (messageId) processedMessages.add(messageId);
-      addTurn(conversationId, result.scores);
+      addTurn(conversationId, result.scores, result.confidence);
       const instability = computeInstabilityScore(conversationId);
-      return { ...result, instability };
+      const history     = getHistory(conversationId);
+      return { ...result, instability, history };
     });
   }
 });

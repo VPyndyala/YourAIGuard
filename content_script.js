@@ -55,7 +55,64 @@ function createLoadingIndicator() {
   return el;
 }
 
-function createIndicator(confidence, scores, instability) {
+function createTimelinePanel(history, border) {
+  const panel = document.createElement("div");
+  panel.style.cssText = `
+    display:none; margin-top:10px; padding-top:10px;
+    border-top:1px solid ${border};
+  `;
+
+  const RUNG_TIMELINE_LABELS = ["R1 Risk", "R2 Facts", "R3 Advers.", "R4 Stakeh.", "R5 Revision"];
+
+  // ── Rung dot grid ──
+  for (let k = 0; k < 5; k++) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:4px;margin-bottom:5px;";
+
+    const label = document.createElement("span");
+    label.style.cssText = "font-size:10px;color:#6b7280;width:72px;flex-shrink:0;";
+    label.textContent = RUNG_TIMELINE_LABELS[k];
+    row.appendChild(label);
+
+    const dots = document.createElement("div");
+    dots.style.cssText = "display:flex;gap:3px;align-items:center;flex-wrap:wrap;";
+    history.forEach(h => {
+      const dot = document.createElement("span");
+      dot.style.cssText = `
+        display:inline-block; width:9px; height:9px; border-radius:50%;
+        background:${h.rungs[k] ? "#16a34a" : "#ef4444"};
+        flex-shrink:0;
+      `;
+      dots.appendChild(dot);
+    });
+    row.appendChild(dots);
+    panel.appendChild(row);
+  }
+
+  // ── Confidence bar chart ──
+  const chartLabel = document.createElement("div");
+  chartLabel.style.cssText = "font-size:10px;color:#6b7280;margin-top:10px;margin-bottom:4px;";
+  chartLabel.textContent = "Confidence per turn";
+  panel.appendChild(chartLabel);
+
+  const chart = document.createElement("div");
+  chart.style.cssText = "display:flex;align-items:flex-end;gap:3px;height:36px;";
+  history.forEach(h => {
+    const bar = document.createElement("div");
+    bar.style.cssText = `
+      width:9px; min-height:2px; height:${Math.round(h.confidence * 0.36)}px;
+      border-radius:2px 2px 0 0; flex-shrink:0;
+      background:${h.confidence >= 60 ? "#16a34a" : "#ef4444"};
+    `;
+    bar.title = `${h.confidence}%`;
+    chart.appendChild(bar);
+  });
+  panel.appendChild(chart);
+
+  return panel;
+}
+
+function createIndicator(confidence, scores, instability, history) {
   const hasPhase = instability?.phase !== null && instability?.phase !== undefined;
   const phase    = hasPhase ? PHASE_CONFIG[instability.phase] : null;
   const bg       = phase?.bg     ?? "#f0fdf4";
@@ -93,8 +150,31 @@ function createIndicator(confidence, scores, instability) {
     `;
   }
 
-  header.innerHTML = headerHTML;
-  el.appendChild(header);
+  // ── Timeline toggle button (shown if we have history) ──
+  if (history?.length > 1) {
+    const toggleBtn = document.createElement("button");
+    toggleBtn.textContent = "📊";
+    toggleBtn.title = "Toggle timeline";
+    toggleBtn.style.cssText = `
+      margin-left:auto; background:none; border:none; cursor:pointer;
+      font-size:14px; padding:0 2px; opacity:0.6; line-height:1;
+    `;
+    toggleBtn.onmouseenter = () => toggleBtn.style.opacity = "1";
+    toggleBtn.onmouseleave = () => toggleBtn.style.opacity = "0.6";
+    header.innerHTML = headerHTML;
+    header.appendChild(toggleBtn);
+    el.appendChild(header);
+
+    const timeline = createTimelinePanel(history, border);
+    el.appendChild(timeline);
+    toggleBtn.addEventListener("click", () => {
+      const visible = timeline.style.display !== "none";
+      timeline.style.display = visible ? "none" : "block";
+    });
+  } else {
+    header.innerHTML = headerHTML;
+    el.appendChild(header);
+  }
 
   if (!hasPhase) {
     // ── Calibrating: compact single rung line ──
@@ -163,7 +243,7 @@ async function runAnalysis(responseEl, userPrompt, baseText) {
       return;
     }
 
-    loadingNode.replaceWith(createIndicator(result.confidence, result.scores, result.instability));
+    loadingNode.replaceWith(createIndicator(result.confidence, result.scores, result.instability, result.history));
 
   } catch {
     loadingNode.remove();
