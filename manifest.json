@@ -26,9 +26,7 @@
   ],
   "permissions": [
     "activeTab",
-    "storage",
-    "webRequest",
-    "https://chatgpt.com/*"
+    "storage"
   ],
   "web_accessible_resources": [
     "gate_model.json",

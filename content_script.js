@@ -90,16 +90,57 @@ function insertIndicator(responseEl, node) {
 // ─── ChatGPT Session API ──────────────────────────────────────────────────────
 
 /**
+ * Fetches a fresh sentinel requirements token and computes proof-of-work
+ * if the server requires it. Uses SHA-256 via the Web Crypto API.
+ */
+async function buildSentinelHeaders() {
+  const res = await fetch("https://chatgpt.com/backend-api/sentinel/chat-requirements", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) return {};
+  const data = await res.json();
+
+  const headers = {};
+  if (data.token) headers["openai-sentinel-chat-requirements-token"] = data.token;
+
+  const pow = data.proofofwork;
+  if (pow?.required && pow.seed && pow.difficulty) {
+    const proof = await computeProofOfWork(pow.seed, pow.difficulty);
+    if (proof) headers["openai-sentinel-proof-token"] = proof;
+  }
+
+  return headers;
+}
+
+/**
+ * Finds a nonce N such that hex(SHA-256(seed + N)) starts with difficulty.
+ * Returns the formatted proof token string, or null if not found in time.
+ */
+async function computeProofOfWork(seed, difficulty) {
+  const encoder = new TextEncoder();
+  for (let n = 0; n < 500000; n++) {
+    const buf = await crypto.subtle.digest("SHA-256", encoder.encode(seed + n));
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    if (hex.startsWith(difficulty)) {
+      return "gAAAAAB" + btoa(JSON.stringify([seed, n]));
+    }
+  }
+  return null;
+}
+
+/**
  * Sends one invisible message to ChatGPT's backend using the user's session.
- * Reuses the sentinel/proof headers captured from the user's most recent real
- * ChatGPT request — the same tokens the frontend already computed.
+ * Computes fresh sentinel + proof-of-work tokens for each call.
  * history_and_training_disabled: true so it won't appear in chat history.
  */
 async function callChatGPTSession(prompt) {
-  const captured = await browser.runtime.sendMessage({ type: "get_conv_headers" });
-  console.log("[YourAIGuard] Captured headers:", JSON.stringify(captured));
+  const sentinelHeaders = await buildSentinelHeaders();
+  console.log("[YourAIGuard] Sentinel headers built:", Object.keys(sentinelHeaders));
 
-  const headers = { "Content-Type": "application/json", ...captured };
+  const headers = { "Content-Type": "application/json", ...sentinelHeaders };
 
   const body = {
     action: "next",

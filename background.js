@@ -76,40 +76,9 @@ async function scoreRungs({ prompt, base, r1, r2, r3, r4, r5 }) {
   return { scores, confidence };
 }
 
-// ─── Header Capture ──────────────────────────────────────────────────────────
-// Intercept ChatGPT's own conversation requests to capture the sentinel/proof
-// tokens that the frontend computes. We reuse these for our invisible rung call.
-
-const CAPTURE_HEADERS = [
-  "openai-sentinel-chat-requirements-token",
-  "openai-sentinel-proof-token",
-  "oai-device-id",
-  "oai-language",
-  "oai-timezone",
-];
-
-let capturedHeaders = {};
-
-browser.webRequest.onBeforeSendHeaders.addListener(
-  ({ requestHeaders }) => {
-    const found = {};
-    for (const h of requestHeaders) {
-      if (CAPTURE_HEADERS.includes(h.name.toLowerCase())) {
-        found[h.name] = h.value;
-      }
-    }
-    if (Object.keys(found).length > 0) capturedHeaders = found;
-  },
-  { urls: ["https://chatgpt.com/backend-api/conversation"] },
-  ["requestHeaders"]
-);
-
-// ─── Message Handler ──────────────────────────────────────────────────────────
-
 browser.runtime.onMessage.addListener((message) => {
-  if (message.type === "classify_prompt")  return classifyGate(message.prompt);
-  if (message.type === "score_rungs")      return scoreRungs(message.data);
-  if (message.type === "get_conv_headers") return Promise.resolve(capturedHeaders);
+  if (message.type === "classify_prompt") return classifyGate(message.prompt);
+  if (message.type === "score_rungs")     return scoreRungs(message.data);
 });
 
 init();
