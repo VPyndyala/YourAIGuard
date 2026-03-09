@@ -20,6 +20,8 @@ const RUNG_LABELS = [
   "R5 — Revision Trigger",
 ];
 
+const RUNG_SHORT = ["R1 Risk", "R2 Facts", "R3 Adversarial", "R4 Stakeholder", "R5 Revision"];
+
 // ─── Conversation ID ──────────────────────────────────────────────────────────
 
 function getConversationId() {
@@ -99,7 +101,7 @@ function createIndicator(confidence, scores, instability) {
     const rungLine = document.createElement("div");
     rungLine.style.cssText = "font-size:12px;color:#6b7280;margin-top:2px;";
     rungLine.textContent = scores
-      .map((s, i) => `${s.pass ? "✔" : "✖"} R${i + 1}`)
+      .map((s, i) => `${s.pass ? "✔" : "✖"} ${RUNG_SHORT[i]}`)
       .join("  ·  ");
     el.appendChild(rungLine);
   } else {
