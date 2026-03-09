@@ -67,6 +67,9 @@ let ready           = false;
 // Conversation history: conversationId → [{f, e, rungs: [bool×5]}]
 const conversationHistory = {};
 
+// Tracks message IDs already scored — prevents double-counting on SPA navigation
+const processedMessages = new Set();
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -209,9 +212,17 @@ browser.runtime.onMessage.addListener((message) => {
   if (message.type === "classify_prompt") return classifyGate(message.prompt);
 
   if (message.type === "analyze_response") {
-    const { conversationId, prompt, base } = message.data;
+    const { conversationId, messageId, prompt, base } = message.data;
+
+    // Skip if this message was already scored (SPA navigation re-scan guard)
+    if (messageId && processedMessages.has(messageId)) {
+      const instability = computeInstabilityScore(conversationId);
+      return Promise.resolve({ cached: true, instability });
+    }
+
     return scoreRungs_local(prompt, base).then(result => {
       if (!result) return null;
+      if (messageId) processedMessages.add(messageId);
       addTurn(conversationId, result.scores);
       const instability = computeInstabilityScore(conversationId);
       return { ...result, instability };

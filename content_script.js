@@ -137,16 +137,23 @@ async function runAnalysis(responseEl, userPrompt, baseText) {
 
   try {
     const conversationId = getConversationId();
+    const messageId      = responseEl.getAttribute("data-message-id") || null;
 
     const result = await Promise.race([
       browser.runtime.sendMessage({
         type: "analyze_response",
-        data: { conversationId, prompt: userPrompt, base: baseText },
+        data: { conversationId, messageId, prompt: userPrompt, base: baseText },
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("Analysis timeout")), 30000)),
     ]);
 
     if (!result) throw new Error("No result from background");
+
+    // Cached result (SPA re-scan): no scores to show, just remove loading node
+    if (result.cached) {
+      loadingNode.remove();
+      return;
+    }
 
     loadingNode.replaceWith(createIndicator(result.confidence, result.scores, result.instability));
 
