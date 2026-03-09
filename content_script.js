@@ -32,9 +32,9 @@ function getConversationId() {
 // ─── UI ───────────────────────────────────────────────────────────────────────
 
 const PHASE_CONFIG = {
-  stable:   { emoji: "🟢", label: "Stable",   color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
-  warning:  { emoji: "🟡", label: "Warning",  color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
-  unstable: { emoji: "🔴", label: "Unstable", color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+  stable:   { emoji: "🟢", label: "AI is reasoning clearly",        color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
+  warning:  { emoji: "🟡", label: "AI reasoning is showing strain", color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+  unstable: { emoji: "🔴", label: "AI reasoning may be unreliable", color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
 };
 
 function createLoadingIndicator() {
@@ -137,11 +137,10 @@ function createIndicator(confidence, scores, instability, history) {
   `;
 
   if (hasPhase) {
+    const passed = scores.filter(s => s.pass).length;
     headerHTML += `
-      <span style="font-size:14px;font-weight:700;color:${confidence >= 60 ? '#16a34a' : '#dc2626'}">${confidence}% confident</span>
-      <span style="color:#d1d5db;font-size:14px">·</span>
       <span style="font-size:13px;font-weight:700;color:${phase.color}">${phase.emoji} ${phase.label}</span>
-      <span style="font-size:11px;color:#9ca3af;">(S=${instability.S}, turn ${instability.turns})</span>
+      <span style="font-size:11px;color:#9ca3af;">(${passed}/5 checks · turn ${instability.turns})</span>
     `;
   } else {
     const turn = (instability?.turns ?? 0) + 1;
@@ -193,8 +192,8 @@ function createIndicator(confidence, scores, instability, history) {
         padding:4px 8px; background:${border}22; border-radius:4px;
       `;
       banner.textContent = instability.phase === "unstable"
-        ? "⚠ Unstable reasoning phase detected — ~34% elevated failure risk in next responses"
-        : "⚠ Warning: reasoning quality degrading across recent turns";
+        ? "⚠ The AI has been making reasoning errors recently — treat its next responses with extra caution"
+        : "⚠ The AI's reasoning quality has been slipping — double-check important claims";
       el.appendChild(banner);
     }
 
