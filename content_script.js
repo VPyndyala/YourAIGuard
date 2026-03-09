@@ -100,16 +100,24 @@ async function buildSentinelHeaders() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
-  if (!res.ok) return {};
+  if (!res.ok) {
+    console.log("[YourAIGuard] Sentinel fetch failed:", res.status);
+    return {};
+  }
   const data = await res.json();
+  console.log("[YourAIGuard] Sentinel response:", JSON.stringify(data).slice(0, 300));
 
   const headers = {};
   if (data.token) headers["openai-sentinel-chat-requirements-token"] = data.token;
 
   const pow = data.proofofwork;
   if (pow?.required && pow.seed && pow.difficulty) {
+    console.log("[YourAIGuard] PoW required — seed:", pow.seed, "difficulty:", pow.difficulty);
     const proof = await computeProofOfWork(pow.seed, pow.difficulty);
     if (proof) headers["openai-sentinel-proof-token"] = proof;
+    else console.log("[YourAIGuard] PoW: no solution found in limit");
+  } else {
+    console.log("[YourAIGuard] PoW not required");
   }
 
   return headers;
@@ -117,14 +125,15 @@ async function buildSentinelHeaders() {
 
 /**
  * Finds a nonce N such that hex(SHA-256(seed + N)) starts with difficulty.
- * Returns the formatted proof token string, or null if not found in time.
+ * Capped at 10,000 iterations to avoid hanging. Returns null if not found.
  */
 async function computeProofOfWork(seed, difficulty) {
   const encoder = new TextEncoder();
-  for (let n = 0; n < 500000; n++) {
+  for (let n = 0; n < 10000; n++) {
     const buf = await crypto.subtle.digest("SHA-256", encoder.encode(seed + n));
     const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
     if (hex.startsWith(difficulty)) {
+      console.log("[YourAIGuard] PoW solved at nonce", n);
       return "gAAAAAB" + btoa(JSON.stringify([seed, n]));
     }
   }
