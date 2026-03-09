@@ -94,33 +94,39 @@ function createIndicator(confidence, scores, instability) {
   header.innerHTML = headerHTML;
   el.appendChild(header);
 
-  // ── Warning banner for elevated phases ──
-  if (hasPhase && instability.phase !== "stable") {
-    const banner = document.createElement("div");
-    banner.style.cssText = `
-      font-size:12px; color:${phase.color}; margin-bottom:8px;
-      padding:4px 8px; background:${border}22; border-radius:4px;
-    `;
-    if (instability.phase === "unstable") {
-      banner.textContent = "⚠ Unstable reasoning phase detected — ~34% elevated failure risk in next responses";
-    } else {
-      banner.textContent = "⚠ Warning: reasoning quality degrading across recent turns";
+  if (!hasPhase) {
+    // ── Calibrating: compact single rung line ──
+    const rungLine = document.createElement("div");
+    rungLine.style.cssText = "font-size:12px;color:#6b7280;margin-top:2px;";
+    rungLine.textContent = scores
+      .map((s, i) => `${s.pass ? "✔" : "✖"} R${i + 1}`)
+      .join("  ·  ");
+    el.appendChild(rungLine);
+  } else {
+    // ── Phase active: warning banner + divider + full rung rows ──
+    if (instability.phase !== "stable") {
+      const banner = document.createElement("div");
+      banner.style.cssText = `
+        font-size:12px; color:${phase.color}; margin-bottom:8px;
+        padding:4px 8px; background:${border}22; border-radius:4px;
+      `;
+      banner.textContent = instability.phase === "unstable"
+        ? "⚠ Unstable reasoning phase detected — ~34% elevated failure risk in next responses"
+        : "⚠ Warning: reasoning quality degrading across recent turns";
+      el.appendChild(banner);
     }
-    el.appendChild(banner);
+
+    const hr = document.createElement("hr");
+    hr.style.cssText = "border:none;border-top:1px solid " + border + ";margin:0 0 8px 0;";
+    el.appendChild(hr);
+
+    scores.forEach((score, i) => {
+      const row = document.createElement("div");
+      row.style.cssText = `display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;color:${score.pass ? '#16a34a' : '#dc2626'};`;
+      row.innerHTML = `<span>${score.pass ? "✔" : "✖"}</span><span>${RUNG_LABELS[i]}</span>`;
+      el.appendChild(row);
+    });
   }
-
-  // ── Divider ──
-  const hr = document.createElement("hr");
-  hr.style.cssText = "border:none;border-top:1px solid " + border + ";margin:0 0 8px 0;";
-  el.appendChild(hr);
-
-  // ── Per-rung rows ──
-  scores.forEach((score, i) => {
-    const row = document.createElement("div");
-    row.style.cssText = `display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;color:${score.pass ? '#16a34a' : '#dc2626'};`;
-    row.innerHTML = `<span>${score.pass ? "✔" : "✖"}</span><span>${RUNG_LABELS[i]}</span>`;
-    el.appendChild(row);
-  });
 
   return el;
 }
