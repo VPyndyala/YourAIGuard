@@ -128,11 +128,13 @@ async function buildSentinelHeaders() {
  * Capped at 10,000 iterations to avoid hanging. Returns null if not found.
  */
 async function computeProofOfWork(seed, difficulty) {
-  const encoder = new TextEncoder();
-  for (let n = 0; n < 10000; n++) {
+  const encoder  = new TextEncoder();
+  const target   = parseInt(difficulty, 16);
+  const prefixLen = difficulty.length;
+  for (let n = 0; n < 200000; n++) {
     const buf = await crypto.subtle.digest("SHA-256", encoder.encode(seed + n));
     const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-    if (hex.startsWith(difficulty)) {
+    if (parseInt(hex.slice(0, prefixLen), 16) < target) {
       console.log("[YourAIGuard] PoW solved at nonce", n);
       return "gAAAAAB" + btoa(JSON.stringify([seed, n]));
     }
