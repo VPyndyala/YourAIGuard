@@ -1,12 +1,24 @@
 {
   "manifest_version": 2,
   "name": "YourAIGuard",
-  "version": "2.0.0",
-  "description": "Helps you stay safe by checking the trustworthiness of AI responses on ChatGPT.",
-  "author": "VPyndyala",
+  "version": "3.0.1",
+  "description": "Instant, private reasoning-quality assessment for every ChatGPT response. No account, no API key — all analysis runs on your device.",
+  "author": "vspendyala",
+  "homepage_url": "https://github.com/VPyndyala/YourAIGuard",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "youraiguard@vspendyala",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": []
+      }
+    }
+  },
   "icons": {
     "48": "icons/icon48.png",
-    "96": "icons/icon96.png"
+    "96": "icons/icon96.png",
+    "128": "icons/icon128.png"
   },
   "browser_action": {
     "default_icon": "icons/icon48.png",
@@ -19,7 +31,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
       "js": ["content_script.js"],
       "run_at": "document_idle"
     }
@@ -29,8 +44,10 @@
     "storage"
   ],
   "web_accessible_resources": [
-    "gate_model.json",
-    "transformers.min.js"
+    "criteria_model.json",
+    "instability_params.json",
+    "transformers.min.js",
+    "models/*"
   ],
-  "content_security_policy": "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; object-src 'self';"
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
 }

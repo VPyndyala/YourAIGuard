@@ -1,0 +1,57 @@
+YourAIGuard — Third-Party Licenses
+====================================
+
+All third-party code and model files are bundled locally.
+No external network requests are made at runtime.
+
+
+────────────────────────────────────────────────────────────────
+1. @xenova/transformers  (transformers.min.js)
+────────────────────────────────────────────────────────────────
+Version:  2.17.2
+Source:   https://github.com/xenova/transformers.js
+npm:      https://www.npmjs.com/package/@xenova/transformers/v/2.17.2
+License:  Apache License 2.0
+
+The file transformers.min.js is the unmodified pre-built browser
+bundle shipped in the npm package at dist/transformers.min.js.
+
+To verify:
+  npm pack @xenova/transformers@2.17.2
+  tar -xf xenova-transformers-2.17.2.tgz
+  sha256sum package/dist/transformers.min.js
+  # expected: bcf7cf304e51f470ed59409622b9d6ffbad80dfcf5baf6a40c919e4b9c4ff812
+
+Apache License 2.0 full text: https://www.apache.org/licenses/LICENSE-2.0
+
+
+────────────────────────────────────────────────────────────────
+2. all-MiniLM-L6-v2  (models/Xenova/all-MiniLM-L6-v2/)
+────────────────────────────────────────────────────────────────
+Version:  Xenova/all-MiniLM-L6-v2 (ONNX export, quantized)
+Source:   https://huggingface.co/Xenova/all-MiniLM-L6-v2
+Origin:   sentence-transformers/all-MiniLM-L6-v2
+          https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+License:  Apache License 2.0
+
+Bundled files:
+  models/Xenova/all-MiniLM-L6-v2/config.json
+  models/Xenova/all-MiniLM-L6-v2/tokenizer.json
+  models/Xenova/all-MiniLM-L6-v2/tokenizer_config.json
+  models/Xenova/all-MiniLM-L6-v2/special_tokens_map.json
+  models/Xenova/all-MiniLM-L6-v2/onnx/model_quantized.onnx
+
+SHA-256 checksums (verify with: sha256sum <file>):
+  model_quantized.onnx : afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1
+  config.json          : 7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7
+
+Apache License 2.0 full text: https://www.apache.org/licenses/LICENSE-2.0
+
+
+────────────────────────────────────────────────────────────────
+3. ONNX Runtime Web  (bundled inside transformers.min.js)
+────────────────────────────────────────────────────────────────
+Source:   https://github.com/microsoft/onnxruntime
+License:  MIT License
+
+MIT License full text: https://opensource.org/licenses/MIT
